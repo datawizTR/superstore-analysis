@@ -1,0 +1,180 @@
+---
+title: "Superstore"
+author: "Tim R"
+date: "2023-03-31"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: 
+    theme: cosmo
+---
+
+In this presentation, we will explore the Superstore Sales dataset and provide insights into the following topics:
+
+Product Sales by Category
+Seasonal Trends in Sales
+Shipping Time by State, 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggthemes)
+library(scales)
+library(plotly)
+library(gridExtra)
+```
+
+```{r}
+superstore <- read.csv("Superstore.csv", header = TRUE, stringsAsFactors = FALSE)
+superstore$Order.Date <- ymd(superstore$Order.Date)
+last_four_years <- filter(superstore, Order.Date >= ymd("2016-01-01"))
+sales_summary <- last_four_years %>%
+  group_by(Product.Name, year = year(Order.Date)) %>%
+  summarize(total_sales = sum(Sales, na.rm = TRUE)) %>%
+  ungroup()
+
+sales_summary <- sales_summary %>%
+  arrange(desc(total_sales)) %>%
+    top_n(10)
+
+```
+
+
+Sales Performance by Region:
+
+```{r}
+sales_by_region <- aggregate(superstore$Sales, by = list(superstore$Region), FUN = sum)
+colnames(sales_by_region) <- c("Region", "Total Sales")
+
+ggplot(sales_by_region, aes(x = Region, y = `Total Sales`, fill = Region)) + 
+  geom_bar(stat = "identity") +
+  labs(title = "Sales Performance by Region", x = "Region", y = "Total Sales")
+
+```
+
+
+```{r}
+sales_by_category <- aggregate(superstore$Sales, by = list(superstore$Category), FUN = sum)
+colnames(sales_by_category) <- c("Category", "Total Sales")
+
+ggplot(sales_by_category, aes(x = Category, y = `Total Sales`, fill = Category)) + 
+  geom_bar(stat = "identity") +
+  labs(title = "Sales by Category", x = "Category", y = "Total Sales") +
+  coord_flip()
+ggsave("sales_by_category.png", width = 8, height = 6, dpi = 300)
+
+```
+
+```{r}
+customer_segments <- aggregate(superstore$Sales, by = list(superstore$Segment), FUN = sum)
+colnames(customer_segments) <- c("Segment", "Total Sales")
+
+ggplot(customer_segments, aes(x = Segment, y = `Total Sales`, fill = Segment)) + 
+  geom_bar(stat = "identity") +
+  labs(title = "Sales by Customer Segment", x = "Customer Segment", y = "Total Sales")
+ggsave("customer_segments.png", width = 8, height = 6, dpi = 300)
+
+
+```
+
+```{r}
+library(RColorBrewer)
+segment_summary <- superstore %>%
+  group_by(Segment) %>%
+  summarise(customers = n_distinct(Customer.ID),
+            profit = sum(Profit)) %>%
+  ungroup()
+
+
+ggplot(segment_summary, aes(x = Segment)) +
+  geom_col(aes(y = customers, fill = customers), width = 0.75, color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  geom_line(aes(y = profit/1000, group = 1, color = "Profit"), size = 1.5) +
+  scale_y_continuous(name = "Customers", expand = c(0, 0.1), sec.axis = sec_axis(~ . * 1000, name = "Profit (in thousands)", breaks = seq(0, max(segment_summary$profit)/1000, by = 5))) +
+  scale_color_manual(values = c("red")) +
+  labs(title = "Customer Count and Profitability by Segment",
+       x = "Segment",
+       fill = "",
+       color = "") +
+  theme_minimal()
+
+```
+
+```{r}
+library(dplyr)
+
+top_customers <- superstore %>%
+  group_by(Customer.Name) %>%
+  summarise(total_sales = sum(Sales)) %>%
+  arrange(desc(total_sales)) %>%
+  head(10)
+
+ggplot(top_customers, aes(x = reorder(Customer.Name, total_sales), y = total_sales, fill = total_sales)) +
+  geom_bar(stat = "identity") +
+  xlab("Customer Name") +
+  ylab("Total Sales") +
+  ggtitle("Top 10 Biggest Customers") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue")
+```
+
+
+```{r}
+
+price_analysis <- aggregate(superstore$Profit, by = list(superstore$Sub.Category), FUN = mean)
+colnames(price_analysis) <- c("Sub.Category", "Average Profit")
+
+ggplot(price_analysis, aes(x = Sub.Category, y = `Average Profit`, fill = Sub.Category)) + 
+  geom_bar(stat = "identity") +
+  xlab("Sub-Category") +
+  ylab("Average Profit") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+sales_by_category <- superstore %>%
+  group_by(Category, Sub.Category) %>%
+  summarise(total_sales = sum(Sales),
+            total_profit = sum(Profit)) %>%
+  ungroup() %>%
+  mutate(profit_margin = total_profit / total_sales * 100) %>%
+  top_n(10, total_profit)
+
+ggplot(sales_by_category, aes(x = Category, y = total_sales, fill = Sub.Category)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(sec.axis = sec_axis(~ . / 1000, name = "Profit (in thousands)")) +
+  labs(title = "Sales and Profitability by Category",
+       x = "Category",
+       y = "Total Sales",
+       fill = "Sub-Category") +
+  theme_bw() +
+  geom_line(aes(y = profit_margin * 100), color = "red", size = 1.5) +
+  scale_fill_brewer(palette = "Set2") +
+  coord_flip()
+
+ggsave("sales_profit_analysis.png", width = 20, height = 20, dpi = 300)
+
+```
+```{r}
+ggplot(sales_by_category, aes(x = Category, y = total_sales, fill = Sub.Category)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(sec.axis = sec_axis(~ . / 100, name = "Profit Margin (%)")) +
+  labs(title = "Sales and Profitability by Category",
+       x = "Category",
+       y = "Total Sales",
+       fill = "Sub-Category") +
+  theme_bw() +
+  geom_line(aes(y = profit_margin * 100), color = "red", size = 1.5) +
+  scale_fill_brewer(palette = "Set2") +
+  guides(fill = guide_legend(override.aes = list(color = NULL)))
+ggsave("sales_plot.png", width = 8, height = 6, dpi = 300)
+```
+
+
+Conclusion
+
+In conclusion, the Superstore Sales dataset provides valuable insights into product sales, seasonal trends, and shipping time by state. By analyzing this data, we can make informed business decisions and improve our overall sales strategy.
+
+
+
